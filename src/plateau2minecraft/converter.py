@@ -67,14 +67,15 @@ class Minecraft:
 
         stone = Block("minecraft", "stone")
 
-        # data/output/world_data/region/フォルダの中身を削除
+        # {output}/world_data/region/フォルダの中身を削除
         # フォルダが存在しない場合は、フォルダを作成する
         # フォルダが存在する場合は、フォルダの中身を削除する
-        if os.path.exists("data/output/world_data/region"):
-            for file in os.listdir("data/output/world_data/region"):
-                os.remove(f"data/output/world_data/region/{file}")
+        region_dir = f"{output}/world_data/region"
+        if os.path.exists(region_dir):
+            for file in os.listdir(region_dir):
+                os.remove(f"{region_dir}/{file}")
         else:
-            os.makedirs("data/output/world_data/region", exist_ok=True)
+            os.makedirs(region_dir, exist_ok=True)
 
         for block_id, points in standardized_blocks.items():
             region = EmptyRegion(0, 0)
@@ -86,7 +87,7 @@ class Minecraft:
                 except OutOfBoundsCoordinates:
                     continue
             print(f"save: {block_id}")
-            region.save(f"{output}/world_data/region/{block_id}")
+            region.save(f"{region_dir}/{block_id}")
 
     def _get_world_origin(self, vertices):
         min_x = min(vertices[:, 0])
