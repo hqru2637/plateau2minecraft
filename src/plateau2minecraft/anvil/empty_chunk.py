@@ -1,3 +1,4 @@
+from typing import NoReturn
 from nbt import nbt
 
 from .biome import Biome
@@ -121,7 +122,7 @@ class EmptyChunk:
         section.set_block(block, x, y % 16, z)
 
     def set_biome(self, biome: Biome):
-        for section in self.section:
+        for section in self.sections:
             if section is not None:
                 section.set_biome(biome)
 

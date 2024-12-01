@@ -1,56 +1,65 @@
 import os
 from pathlib import Path
+from typing import Any
+from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
-from click import Path
-from trimesh.points import PointCloud
+
+from plateau2minecraft.anvil.empty_chunk import EmptyChunk
+from plateau2minecraft.point import Point
 
 from .anvil import Block, EmptyRegion
 from .anvil.errors import OutOfBoundsCoordinates
 
+grass_block = Block("minecraft", "grass_block")
+floor_pos_y = 112
 
 class Minecraft:
-    def __init__(self, point_cloud: PointCloud) -> None:
-        self.point_cloud = point_cloud
+    def __init__(self) -> None:
+        self.regions: dict[str, EmptyRegion] = {}
 
     def _point_shift(self, points: np.ndarray, x: float, y: float, z: float) -> np.ndarray:
         points += np.array([x, y, z])
         return points
 
-    def _split_point_cloud(self, vertices: np.ndarray, block_size: int = 512) -> dict[str, np.ndarray]:
+    def _split_point_cloud(self, vertices: np.ndarray, region_size: int = 512) -> dict[str, dict[str, Any]]:
         # XYZ座標の取得
         x = vertices[:, 0]
         y = vertices[:, 1]
 
         # XY座標をブロックサイズで割って、整数値に丸めることでブロックIDを作成
-        block_id_x = np.floor(x / block_size).astype(int)
-        block_id_y = np.floor(y / block_size).astype(int)
+        region_id_x = np.floor(x / region_size).astype(int)
+        region_id_y = np.floor(y / region_size).astype(int)
 
-        # ブロックIDを一意の文字列として結合
-        block_ids = [f"r.{id_x}.{id_y}.mca" for id_x, id_y in zip(block_id_x, block_id_y)]
+        # 各ブロックIDとそのブロックに含まれる座標を格納するリストを作成
+        region_data = {}
 
-        # 各ブロックIDとそのブロックに含まれる座標を格納する辞書を作成
-        blocks = {}
-        for i, block_id in enumerate(block_ids):
-            if block_id not in blocks:
-                blocks[block_id] = []
-            blocks[block_id].append(vertices[i])
+        for i, (id_x, id_y) in enumerate(zip(region_id_x, region_id_y)):
+            region_id = f"r.{id_x}.{id_y}.mca"
+            if region_id not in region_data:
+                region_data[region_id] = {
+                    'rx': id_x,
+                    'ry': id_y,
+                    'vertices': []
+                }
+            region_data[region_id]['vertices'].append(vertices[i])
 
-        # ブロックIDと座標を含む辞書を返す
-        return blocks
+        return region_data
 
-    def _standardize_vertices(self, blocks: dict[str, np.ndarray], block_size: int = 512):
-        standardized_blocks = {}
-        for block_id, vertices in blocks.items():
-            standardized_vertices = [vertex % block_size for vertex in vertices]
-            standardized_blocks[block_id] = standardized_vertices
-        return standardized_blocks
+    def _standardize_vertices(self, splitted: dict[str, dict[str, Any]], region_size: int = 512):
+        for region_id, entry in splitted.items():
 
-    def build_region(self, output: Path, origin: tuple[float, float, float] | None = None) -> None:
-        points = np.asarray(self.point_cloud.vertices)
+            # 各頂点を標準化（mod演算を使って座標をblock_sizeで割った余りを取る）
+            splitted[region_id]['vertices'] = np.mod(entry['vertices'], region_size)  # verticesを更新
 
-        origin_point = self._get_world_origin(points) if origin is None else origin
-        print(f"origin_point: {origin_point}")
+        return splitted
+
+
+    def build_region(self, point: Point, origin: tuple[float, float] | None = None) -> None:
+        points = np.asarray(point.vertices)
+
+        origin_point = self.get_world_origin(points) if origin is None else origin
+        # print(f"origin_point: {origin_point}")
 
         # 点群の中心を原点に移動
         points = self._point_shift(points, -origin_point[0], -origin_point[1], 0)
@@ -63,10 +72,23 @@ class Minecraft:
         # 領域ごとに、ボクセルの点群を分割する
         # 分割した点群を、領域ごとに保存する
         blocks = self._split_point_cloud(points)
-        standardized_blocks = self._standardize_vertices(blocks)
+        standardized_regions = self._standardize_vertices(blocks)
 
-        stone = Block("minecraft", "stone")
+        for region_id, entry in standardized_regions.items():
+            region = self.regions[region_id] if region_id in self.regions else EmptyRegion(entry['rx'], entry['ry'])
+            print(f"[Region] building ({region.x}, {region.z})")
+            points = np.asarray(points).astype(int)
+            for row in points:
+                x, z, y = row # MinecraftとはY-UPの右手系なので、そのように変数を定義する
+                try:
+                    if point.feature_type == 'tran':
+                        y = floor_pos_y
+                    region.set_block(point.get_block(), x, y, z) 
+                except OutOfBoundsCoordinates:
+                    continue
+            self.regions[region_id] = region
 
+    def save_region(self, output: Path):
         # {output}/world_data/region/フォルダの中身を削除
         # フォルダが存在しない場合は、フォルダを作成する
         # フォルダが存在する場合は、フォルダの中身を削除する
@@ -77,24 +99,16 @@ class Minecraft:
         else:
             os.makedirs(region_dir, exist_ok=True)
 
-        for block_id, points in standardized_blocks.items():
-            region = EmptyRegion(0, 0)
-            points = np.asarray(points).astype(int)
-            for row in points:
-                x, y, z = row
-                try:
-                    region.set_block(stone, x, z, y) # MinecraftとはY-UPの右手系なので、そのように変数を定義する
-                except OutOfBoundsCoordinates:
-                    continue
-            print(f"save: {block_id}")
-            region.save(f"{region_dir}/{block_id}")
+        for region_id, region in self.regions.items():
+            region.save(f"{region_dir}/{region_id}")
+            print(f"saved: {region_id}")
 
-    def _get_world_origin(self, vertices):
-        min_x = min(vertices[:, 0])
-        max_x = max(vertices[:, 0])
+    def get_world_origin(self, points):
+        min_x = min(points[:, 0])
+        max_x = max(points[:, 0])
 
-        min_y = min(vertices[:, 1])
-        max_y = max(vertices[:, 1])
+        min_y = min(points[:, 1])
+        max_y = max(points[:, 1])
 
         # 中心座標を求める
         center_x = (max_x + min_x) / 2
@@ -104,3 +118,16 @@ class Minecraft:
         origin_point = (center_x + 0.5, center_y + 0.5)
 
         return origin_point
+
+
+    def fill_empty_with_grass(self):
+        for region in self.regions.values():
+            for i, chunk in enumerate(region.chunks):
+                if chunk is None:
+                    region.chunks[i] = EmptyChunk(i % 32, i // 32)
+
+                for x in range(16):
+                    for z in range(16):
+                        block = chunk.get_block(x, floor_pos_y, z)
+                        if block is None or block.name() == 'minecraft:air':
+                            chunk.set_block(grass_block, x, floor_pos_y, z)
