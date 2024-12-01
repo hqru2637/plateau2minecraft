@@ -119,15 +119,25 @@ class Minecraft:
 
         return origin_point
 
+    def _fill_missing_chunks(self, region: EmptyRegion):
+        for i, chunk in enumerate(region.chunks):
+            if chunk is None:
+                region.chunks[i] = EmptyChunk(i % 32, i // 32)
+
+    def _replace_air_with_grass(self, region: EmptyRegion):
+        for chunk in region.chunks:
+            if chunk is None:
+                continue
+            for x in range(16):
+                for z in range(16):
+                    block = chunk.get_block(x, floor_pos_y, z)
+                    if block is None or block.name() == 'minecraft:air':
+                        chunk.set_block(grass_block, x, floor_pos_y, z)
 
     def fill_empty_with_grass(self):
-        for region in self.regions.values():
-            for i, chunk in enumerate(region.chunks):
-                if chunk is None:
-                    region.chunks[i] = EmptyChunk(i % 32, i // 32)
+        with ThreadPoolExecutor() as executor:
+            executor.map(self._process_region, self.regions.values())
 
-                for x in range(16):
-                    for z in range(16):
-                        block = chunk.get_block(x, floor_pos_y, z)
-                        if block is None or block.name() == 'minecraft:air':
-                            chunk.set_block(grass_block, x, floor_pos_y, z)
+    def _process_region(self, region: EmptyRegion):
+        self._fill_missing_chunks(region)
+        self._replace_air_with_grass(region)
