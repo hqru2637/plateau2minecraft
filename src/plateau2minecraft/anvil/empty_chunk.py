@@ -1,4 +1,3 @@
-from typing import NoReturn
 from nbt import nbt
 
 from .biome import Biome
