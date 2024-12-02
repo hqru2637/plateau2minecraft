@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 from typing import Any
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import numpy as np
 
@@ -59,7 +59,6 @@ class Minecraft:
         points = np.asarray(point.vertices)
 
         origin_point = self.get_world_origin(points) if origin is None else origin
-        # print(f"origin_point: {origin_point}")
 
         # 点群の中心を原点に移動
         points = self._point_shift(points, -origin_point[0], -origin_point[1], 0)
@@ -76,7 +75,7 @@ class Minecraft:
 
         for region_id, entry in standardized_regions.items():
             region = self.regions[region_id] if region_id in self.regions else EmptyRegion(entry['rx'], entry['ry'])
-            print(f"[Region] building ({region.x}, {region.z})")
+            # print(f"[Region] building ({region.x}, {region.z})")
             points = np.asarray(points).astype(int)
             for row in points:
                 x, z, y = row # MinecraftとはY-UPの右手系なので、そのように変数を定義する
@@ -88,7 +87,12 @@ class Minecraft:
                     continue
             self.regions[region_id] = region
 
-    def save_region(self, output: Path):
+    def _save_region(self, region_id: str, region: EmptyRegion, region_dir: str):
+        save_path = f"{region_dir}/{region_id}"
+        region.save(save_path)
+        return region_id
+
+    def save_regions(self, output: Path):
         # {output}/world_data/region/フォルダの中身を削除
         # フォルダが存在しない場合は、フォルダを作成する
         # フォルダが存在する場合は、フォルダの中身を削除する
@@ -99,9 +103,18 @@ class Minecraft:
         else:
             os.makedirs(region_dir, exist_ok=True)
 
-        for region_id, region in self.regions.items():
-            region.save(f"{region_dir}/{region_id}")
-            print(f"saved: {region_id}")
+        # 並列で region を保存
+        with ThreadPoolExecutor() as executor:
+            futures = {
+                executor.submit(self._save_region, region_id, region, region_dir): region_id
+                for region_id, region in self.regions.items()
+            }
+            for future in as_completed(futures):
+                region_id = futures[future]
+                try:
+                    print(f"saved: {region_id}")
+                except Exception as e:
+                    print(f"Error saving region {region_id}: {e}")
 
     def get_world_origin(self, points):
         min_x = min(points[:, 0])

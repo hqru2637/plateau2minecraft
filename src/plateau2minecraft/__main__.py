@@ -2,7 +2,6 @@ import argparse
 import logging
 from pathlib import Path
 
-from plateau2minecraft.anvil.empty_region import EmptyRegion
 from plateau2minecraft.converter import Minecraft
 from plateau2minecraft.merge_points import merge
 from plateau2minecraft.parser import get_triangle_meshs
@@ -60,5 +59,6 @@ if __name__ == "__main__":
     logging.info("Filling grass blocks")
     mc.fill_empty_with_grass()
 
-    logging.info("Saving regions to: %s", args.output)
-    mc.save_region(args.output)
+    logging.info("Saving %s regions", len(mc.regions))
+    mc.save_regions(args.output)
+    logging.info("Successfully saved %s regions to '%s'", len(mc.regions), args.output)
