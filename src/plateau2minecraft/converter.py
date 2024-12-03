@@ -135,7 +135,9 @@ class Minecraft:
     def _fill_missing_chunks(self, region: EmptyRegion):
         for i, chunk in enumerate(region.chunks):
             if chunk is None:
-                region.chunks[i] = EmptyChunk((i % 32) * region.x, (i // 32) * region.z)
+                chunk_x = (i % 32) + (region.x * 32)
+                chunk_z = (i // 32) + (region.z * 32)
+                region.chunks[i] = EmptyChunk(chunk_x, chunk_z)
 
     def _replace_air_with_grass(self, region: EmptyRegion):
         for chunk in region.chunks:
