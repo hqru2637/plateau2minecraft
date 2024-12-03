@@ -3,7 +3,6 @@ from trimesh import PointCloud
 
 from plateau2minecraft.anvil.block import Block
 
-
 block_type_map = {
     "bldg": Block("minecraft", "stone"),
     "brid": Block("minecraft", "cobblestone"),
@@ -12,7 +11,8 @@ block_type_map = {
     "tran": Block("minecraft", "gray_concrete"),
 }
 
-class Point(PointCloud):
+
+class PointChunk(PointCloud):
     def __init__(self, vertices, feature_type: str):
         super().__init__(vertices)
         self.feature_type = feature_type
@@ -23,4 +23,3 @@ class Point(PointCloud):
     @staticmethod
     def to_array(point_cloud: PointCloud):
         return np.asarray(point_cloud.vertices)
-        

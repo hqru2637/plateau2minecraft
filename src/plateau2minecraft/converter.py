@@ -1,18 +1,16 @@
 import os
-from pathlib import Path
-from typing import Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 
 import numpy as np
 
-from plateau2minecraft.anvil.empty_chunk import EmptyChunk
-from plateau2minecraft.point import Point
+from plateau2minecraft.point import PointChunk
 
-from .anvil import Block, EmptyRegion
-from .anvil.errors import OutOfBoundsCoordinates
+from .anvil import Block, EmptyChunk, EmptyRegion
 
 grass_block = Block("minecraft", "grass_block")
 floor_pos_y = 112
+
 
 class Minecraft:
     def __init__(self) -> None:
@@ -22,41 +20,21 @@ class Minecraft:
         points += np.array([x, y, z])
         return points
 
-    def _split_point_cloud(self, vertices: np.ndarray, region_size: int = 512) -> dict[str, dict[str, Any]]:
-        # XYZ座標の取得
-        x = vertices[:, 0]
-        y = vertices[:, 1]
+    def _get_region(self, x: int, z: int) -> EmptyRegion:
+        region_pos_x = x // 512
+        region_pos_z = z // 512
+        region_id = f"r.{region_pos_x}.{region_pos_z}.mca"
 
-        # XY座標をブロックサイズで割って、整数値に丸めることでブロックIDを作成
-        region_id_x = np.floor(x / region_size).astype(int)
-        region_id_y = np.floor(y / region_size).astype(int)
+        if region_id in self.regions:
+            return self.regions[region_id]
 
-        # 各ブロックIDとそのブロックに含まれる座標を格納するリストを作成
-        region_data = {}
+        region = EmptyRegion(region_pos_x, region_pos_z)
+        self.regions[region_id] = region
 
-        for i, (id_x, id_y) in enumerate(zip(region_id_x, region_id_y)):
-            region_id = f"r.{id_x}.{id_y}.mca"
-            if region_id not in region_data:
-                region_data[region_id] = {
-                    'rx': id_x,
-                    'ry': id_y,
-                    'vertices': []
-                }
-            region_data[region_id]['vertices'].append(vertices[i])
+        return region
 
-        return region_data
-
-    def _standardize_vertices(self, splitted: dict[str, dict[str, Any]], region_size: int = 512):
-        for region_id, entry in splitted.items():
-
-            # 各頂点を標準化（mod演算を使って座標をblock_sizeで割った余りを取る）
-            splitted[region_id]['vertices'] = np.mod(entry['vertices'], region_size)  # verticesを更新
-
-        return splitted
-
-
-    def build_region(self, point: Point, origin: tuple[float, float] | None = None) -> None:
-        points = np.asarray(point.vertices)
+    def build_region(self, point_chunk: PointChunk, origin: tuple[float, float] | None = None) -> None:
+        points = np.asarray(point_chunk.vertices)
 
         origin_point = self.get_world_origin(points) if origin is None else origin
 
@@ -66,26 +44,15 @@ class Minecraft:
         points = self._point_shift(points, 0.5, 0.5, 0)
         # Y軸を反転させて、Minecraftの南北とあわせる
         points[:, 1] *= -1
+        points = points.astype(int)
 
-        # 原点を中心として、x軸方向に512m、y軸方向に512mの領域を作成する
-        # 領域ごとに、ボクセルの点群を分割する
-        # 分割した点群を、領域ごとに保存する
-        blocks = self._split_point_cloud(points)
-        standardized_regions = self._standardize_vertices(blocks)
-
-        for region_id, entry in standardized_regions.items():
-            region = self.regions[region_id] if region_id in self.regions else EmptyRegion(entry['rx'], entry['ry'])
-            # print(f"[Region] building ({region.x}, {region.z})")
-            points = np.asarray(points).astype(int)
-            for row in points:
-                x, z, y = row # MinecraftとはY-UPの右手系なので、そのように変数を定義する
-                try:
-                    if point.feature_type == 'tran':
-                        y = floor_pos_y
-                    region.set_block(point.get_block(), x, y, z) 
-                except OutOfBoundsCoordinates:
-                    continue
-            self.regions[region_id] = region
+        for point in points:
+            # MinecraftとはY-UPの右手系なので、そのように変数を定義する
+            x, z, y = point
+            region = self._get_region(x, z)
+            if (point_chunk.feature_type == "tran"):
+                y = floor_pos_y
+            region.set_block(point_chunk.get_block(), x, y, z)
 
     def _save_region(self, region_id: str, region: EmptyRegion, region_dir: str):
         save_path = f"{region_dir}/{region_id}"
@@ -146,7 +113,7 @@ class Minecraft:
             for x in range(16):
                 for z in range(16):
                     block = chunk.get_block(x, floor_pos_y, z)
-                    if block is None or block.name() == 'minecraft:air':
+                    if block is None or block.name() == "minecraft:air":
                         chunk.set_block(grass_block, x, floor_pos_y, z)
 
     def fill_empty_with_grass(self):

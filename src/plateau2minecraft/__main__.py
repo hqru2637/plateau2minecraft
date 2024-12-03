@@ -5,7 +5,7 @@ from pathlib import Path
 from plateau2minecraft.converter import Minecraft
 from plateau2minecraft.merge_points import merge
 from plateau2minecraft.parser import get_triangle_meshs
-from plateau2minecraft.point import Point
+from plateau2minecraft.point import PointChunk
 from plateau2minecraft.voxelizer import voxelize
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -41,12 +41,12 @@ if __name__ == "__main__":
         logging.info("Voxelize: %s", file_path.name)
         point_cloud = voxelize(triangle_mesh)
 
-        points.append(Point(point_cloud.vertices, feature_type))
+        points.append(PointChunk(point_cloud.vertices, feature_type))
 
         logging.info("Processing end: %s", file_path.name)
 
     logging.info("Merging %s points", len(points))
-    merged_points = Point.to_array(merge(points))
+    merged_points = PointChunk.to_array(merge(points))
     logging.info(merged_points.size)
 
     logging.info("Calculating world origin")
