@@ -9,7 +9,7 @@ from plateau2minecraft.point import PointChunk
 from .anvil import Block, EmptyChunk, EmptyRegion
 
 grass_block = Block("minecraft", "grass_block")
-floor_pos_y = 112
+floor_pos_y = 111
 
 
 class Minecraft:
@@ -52,7 +52,9 @@ class Minecraft:
             region = self._get_region(x, z)
             if (point_chunk.feature_type == "tran"):
                 y = floor_pos_y
-            region.set_block(point_chunk.get_block(), x, y, z)
+                region.set_block(point_chunk.get_block(), x, y, z)
+            else:
+                region.fill(point_chunk.get_block(), x, y, z, x, y - 5, z)
 
     def _save_region(self, region_id: str, region: EmptyRegion, region_dir: str):
         save_path = f"{region_dir}/{region_id}"
